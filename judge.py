@@ -80,8 +80,16 @@ def build_messages(system_prompt, user_prompt):
 async def generate_content(client, system_prompt, user_prompt, pbar):
     messages = build_messages(system_prompt, user_prompt)
     response_content = await client.request_chat_completion(messages, temperature=1.0)
+    stripped_content = strip_tag(response_content, ["playwright", "think"])
     pbar.update(1)
-    return response_content
+    return stripped_content
+
+
+def strip_tag(content, tags):
+    for tag in tags:
+        content = re.sub(rf"<{tag}.*?>.*?</{tag}>", "", content, flags=re.DOTALL)
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    return content.strip()
 
 
 async def judge_content(client, judge_prompt, content, variant, categories, pbar):
