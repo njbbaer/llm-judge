@@ -49,26 +49,37 @@ async def load_context():
         return yaml.load(f)
 
 
-async def generate_content(client, system_prompt, user_prompt, pbar):
-    messages = [
-        {"role": "system", "content": system_prompt},
+def build_messages(system_prompt, user_prompt):
+    return [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {
+                        "type": "ephemeral",
+                    },
+                }
+            ],
+        },
         {"role": "user", "content": user_prompt},
     ]
+
+
+async def generate_content(client, system_prompt, user_prompt, pbar):
+    messages = build_messages(system_prompt, user_prompt)
     response_content = await client.request_chat_completion(messages)
     pbar.update(1)
     return response_content
 
 
 async def judge_content(client, judge_prompt, content, categories, pbar):
-    messages = [
-        {"role": "system", "content": judge_prompt},
-        {"role": "user", "content": content},
-    ]
-
     async def validate_response(text):
         scores = await validate_and_extract_scores(text, categories)
         return scores is not None
 
+    messages = build_messages(judge_prompt, content)
     response_content = await client.request_chat_completion(messages, validate_response)
     scores = await validate_and_extract_scores(response_content, categories)
     pbar.update(1)

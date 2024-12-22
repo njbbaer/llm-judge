@@ -26,7 +26,7 @@ class OpenRouterClient:
                 response, gen_id = await self._make_request(params)
 
                 if validator and not await validator(response):
-                    print(f"{gen_id} validation failed on attempt #{attempt + 1}")
+                    print(f"Judging failed validation on attempt #{attempt + 1}: {gen_id}")
                     continue
 
                 return response
@@ -36,7 +36,7 @@ class OpenRouterClient:
                 if attempt == self.max_retries - 1:
                     raise
 
-        raise RuntimeError("Failed to get valid response after max retries")
+        raise RuntimeError("Failed to get a valid response after max retries")
 
     async def _make_request(self, params):
         headers = {
