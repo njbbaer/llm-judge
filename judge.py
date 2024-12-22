@@ -11,12 +11,12 @@ from src.api_client import OpenRouterClient
 
 async def main():
     context = await load_context()
-    total_calls = context["num_iterations"] * len(context["content_variants"]) * 2
-    client = OpenRouterClient()
+    total_calls = context["iterations"] * len(context["content_variants"]) * 2
+    client = OpenRouterClient(context["model"])
 
     with tqdm(total=total_calls, desc="Processing") as pbar:
         tasks = []
-        for _ in range(context["num_iterations"]):
+        for _ in range(context["iterations"]):
             for variant in context["content_variants"]:
                 tasks.append(
                     process_variant(
@@ -40,7 +40,9 @@ async def process_variant(
     client, content_prompt, judge_prompt, variant, categories, pbar
 ):
     content = await generate_content(client, content_prompt, variant, pbar)
-    scores = await judge_content(client, judge_prompt, content, categories, pbar)
+    scores = await judge_content(
+        client, judge_prompt, content, variant, categories, pbar
+    )
     return scores
 
 
@@ -63,24 +65,38 @@ def build_messages(system_prompt, user_prompt):
                 }
             ],
         },
-        {"role": "user", "content": user_prompt},
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": user_prompt,
+                }
+            ],
+        },
     ]
 
 
 async def generate_content(client, system_prompt, user_prompt, pbar):
     messages = build_messages(system_prompt, user_prompt)
-    response_content = await client.request_chat_completion(messages)
+    response_content = await client.request_chat_completion(messages, temperature=1.0)
     pbar.update(1)
     return response_content
 
 
-async def judge_content(client, judge_prompt, content, categories, pbar):
+async def judge_content(client, judge_prompt, content, variant, categories, pbar):
     async def validate_response(text):
         scores = await validate_and_extract_scores(text, categories)
         return scores is not None
 
     messages = build_messages(judge_prompt, content)
-    response_content = await client.request_chat_completion(messages, validate_response)
+    messages.insert(
+        1, {"role": "assistant", "content": [{"type": "text", "text": variant}]}
+    )
+
+    response_content = await client.request_chat_completion(
+        messages, temperature=0.0, validator=validate_response
+    )
     scores = await validate_and_extract_scores(response_content, categories)
     pbar.update(1)
     return scores
@@ -119,6 +135,8 @@ def calculate_category_stats(category_scores):
 
 def calculate_stats(scores):
     mean = statistics.mean(scores)
+    if len(scores) <= 1:
+        return mean, 0
     std_dev = statistics.stdev(scores)
     sem = std_dev / math.sqrt(len(scores))
     return mean, sem

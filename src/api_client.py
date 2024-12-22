@@ -6,18 +6,18 @@ from src.logger import Logger
 
 
 class OpenRouterClient:
-    def __init__(self):
-        self.model_name = "anthropic/claude-3.5-haiku:beta"
+    def __init__(self, model):
+        self.model = model
         self.logger = Logger("log.yml")
         self.api_key = os.getenv("OPENROUTER_API_KEY")
         self.max_retries = 3
         self.total_cost = 0
 
-    async def request_chat_completion(self, messages, validator=None):
+    async def request_chat_completion(self, messages, temperature, validator=None):
         params = {
-            "model": self.model_name,
+            "model": self.model,
             "max_tokens": 2048,
-            "temperature": 1.0,
+            "temperature": temperature,
             "messages": messages,
         }
 
@@ -26,7 +26,9 @@ class OpenRouterClient:
                 response, gen_id = await self._make_request(params)
 
                 if validator and not await validator(response):
-                    print(f"Judging failed validation on attempt #{attempt + 1}: {gen_id}")
+                    print(
+                        f"Judging failed validation on attempt #{attempt + 1}: {gen_id}"
+                    )
                     continue
 
                 return response
