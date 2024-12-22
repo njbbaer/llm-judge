@@ -15,20 +15,25 @@ async def main():
     client = OpenRouterClient(context["model"])
 
     with tqdm(total=total_calls, desc="Processing") as pbar:
-        tasks = []
-        for _ in range(context["iterations"]):
-            for variant in context["content_variants"]:
-                tasks.append(
-                    process_variant(
-                        client,
-                        context["content_prompt"],
-                        context["judge_prompt"],
-                        variant,
-                        context["judge_categories"],
-                        pbar,
-                    )
-                )
-        all_scores = await asyncio.gather(*tasks)
+        tasks = [
+            process_variant(
+                client,
+                context["content_prompt"],
+                context["judge_prompt"],
+                variant,
+                context["judge_categories"],
+                pbar,
+            )
+            for _ in range(context["iterations"])
+            for variant in context["content_variants"]
+        ]
+
+        if context["warm_cache"] and tasks:
+            first_result = await tasks[0]
+            remaining_results = await asyncio.gather(*tasks[1:])
+            all_scores = [*remaining_results, first_result]
+        else:
+            all_scores = await asyncio.gather(*tasks)
 
     category_scores = group_scores_by_category(all_scores)
     category_stats, all_scores_flat = calculate_category_stats(category_scores)
