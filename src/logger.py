@@ -10,14 +10,16 @@ class Logger:
     def __init__(self, filepath):
         self.filepath = filepath
 
-    def log(self, parameters, messages, response):
+    def log(self, id, cost, params, response):
         buffer = io.StringIO()
+        params["messages"] = self._format_text(params["messages"])
         yaml.dump(
             [
                 {
                     "timestamp": self._current_timestamp(),
-                    "parameters": parameters,
-                    "messages": self._format_text(messages),
+                    "id": id,
+                    "cost": cost,
+                    "parameters": params,
                     "response": LiteralScalarString(response),
                 }
             ],
