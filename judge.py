@@ -8,62 +8,76 @@ from ruamel.yaml import YAML
 from collections import defaultdict
 from tqdm import tqdm
 
-NUM_ITERATIONS = 2
-MAX_RETRIES = 1
+MODEL_NAME = "anthropic/claude-3.5-haiku:beta"
+MAX_RETRIES = 2
 
 
 async def main():
     context = await load_context()
-    all_scores = await gather_scores(context["messages"], context["categories"])
+    total_calls = context["num_iterations"] * len(context["content_variants"]) * 2
+
+    with tqdm(total=total_calls, desc="Processing") as pbar:
+        async with httpx.AsyncClient() as client:
+            tasks = []
+            for _ in range(context["num_iterations"]):
+                for variant in context["content_variants"]:
+                    tasks.append(
+                        process_variant(
+                            client,
+                            context["content_prompt"],
+                            context["judge_prompt"],
+                            variant,
+                            context["judge_categories"],
+                            pbar,
+                        )
+                    )
+            all_scores = await asyncio.gather(*tasks)
 
     category_scores = group_scores_by_category(all_scores)
     category_stats, all_scores_flat = calculate_category_stats(category_scores)
     print_results(category_stats, all_scores_flat)
 
 
+async def process_variant(
+    client, content_prompt, judge_prompt, variant, categories, pbar
+):
+    content = await generate_content(client, content_prompt, variant, pbar)
+    scores = await judge_content(client, judge_prompt, content, categories, pbar)
+    return scores
+
+
 async def load_context():
     yaml = YAML()
     with open("./context.yml", "r") as f:
-        context = yaml.load(f)
-
-    return {
-        "messages": [
-            {"role": "system", "content": context["prompt"]},
-            {"role": "user", "content": context["content"]},
-        ],
-        "categories": context["categories"],
-    }
+        return yaml.load(f)
 
 
-async def gather_scores(messages, expected_categories):
-    with tqdm(total=NUM_ITERATIONS, desc="Processing") as pbar:
-        async with httpx.AsyncClient() as client:
-            tasks = [
-                process_iteration(client, messages, expected_categories, pbar)
-                for _ in range(NUM_ITERATIONS)
-            ]
-            return await asyncio.gather(*tasks)
+async def generate_content(client, system_prompt, user_prompt, pbar):
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    response = await make_api_request(client, messages)
+    pbar.update(1)
+    return response["choices"][0]["message"]["content"]
 
 
-async def process_iteration(client, messages, expected_categories, pbar):
-    return await request_completion(client, messages, expected_categories, pbar)
+async def judge_content(client, judge_prompt, content, categories, pbar):
+    messages = [
+        {"role": "system", "content": judge_prompt},
+        {"role": "user", "content": content},
+    ]
 
-
-async def request_completion(client, messages, expected_categories, pbar):
     for _ in range(MAX_RETRIES):
         try:
-            body = await make_api_request(client, messages)
-
-            if body.get("choices"):
-                content = body["choices"][0]["message"]["content"]
-                scores = await validate_and_extract_scores(content, expected_categories)
-                if scores:
-                    pbar.update(1)
-                    return scores
-                print("Missing or invalid categories in response, retrying...")
-            else:
-                print(f"Response was empty on attempt {_ + 1}, retrying...")
-
+            response = await make_api_request(client, messages)
+            response_content = response["choices"][0]["message"]["content"]
+            scores = await validate_and_extract_scores(response_content, categories)
+            if scores:
+                pbar.update(1)
+                return scores
+            print(f"\n---\nINVALID JUDGING:\n{response_content}\n---\n")
+            print("Missing or invalid categories in response, retrying...")
         except Exception as e:
             print(f"Error on attempt {_ + 1}: {str(e)}")
             if _ == MAX_RETRIES - 1:
@@ -80,7 +94,7 @@ async def make_api_request(client, messages):
             "Content-Type": "application/json",
         },
         json={
-            "model": "anthropic/claude-3.5-haiku:beta",
+            "model": MODEL_NAME,
             "messages": messages,
             "max_tokens": 2048,
             "temperature": 1.0,
