@@ -4,9 +4,11 @@ import os
 import re
 import statistics
 import math
-from ruamel.yaml import YAML
-from collections import defaultdict
 from tqdm import tqdm
+from collections import defaultdict
+
+from src.yaml_config import yaml
+from src.logger import Logger
 
 MODEL_NAME = "anthropic/claude-3.5-haiku:beta"
 MAX_RETRIES = 2
@@ -47,7 +49,6 @@ async def process_variant(
 
 
 async def load_context():
-    yaml = YAML()
     with open("./context.yml", "r") as f:
         return yaml.load(f)
 
@@ -57,9 +58,9 @@ async def generate_content(client, system_prompt, user_prompt, pbar):
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    response = await make_api_request(client, messages)
+    response_content = await make_api_request(client, messages)
     pbar.update(1)
-    return response["choices"][0]["message"]["content"]
+    return response_content
 
 
 async def judge_content(client, judge_prompt, content, categories, pbar):
@@ -70,8 +71,7 @@ async def judge_content(client, judge_prompt, content, categories, pbar):
 
     for _ in range(MAX_RETRIES):
         try:
-            response = await make_api_request(client, messages)
-            response_content = response["choices"][0]["message"]["content"]
+            response_content = await make_api_request(client, messages)
             scores = await validate_and_extract_scores(response_content, categories)
             if scores:
                 pbar.update(1)
@@ -87,21 +87,24 @@ async def judge_content(client, judge_prompt, content, categories, pbar):
 
 
 async def make_api_request(client, messages):
+    logger = Logger("log.yml")
+    params = {
+        "model": MODEL_NAME,
+        "max_tokens": 2048,
+        "temperature": 1.0,
+    }
     response = await client.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
             "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
             "Content-Type": "application/json",
         },
-        json={
-            "model": MODEL_NAME,
-            "messages": messages,
-            "max_tokens": 2048,
-            "temperature": 1.0,
-        },
+        json={**params, "messages": messages},
     )
     response.raise_for_status()
-    return response.json()
+    response_content = response.json()["choices"][0]["message"]["content"]
+    logger.log(params, messages, response_content)
+    return response_content
 
 
 async def validate_and_extract_scores(text, expected_categories):
