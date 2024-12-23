@@ -3,39 +3,41 @@ import os
 import asyncio
 
 from src.logger import Logger
+from src.config import Config
 
 
 class OpenRouterClient:
-    def __init__(self, model):
-        self.model = model
+    def __init__(self, config: Config):
+        self.config = config
         self.logger = Logger("log.yml")
         self.api_key = os.getenv("OPENROUTER_API_KEY")
-        self.max_retries = 3
         self.total_cost = 0
 
     async def request_chat_completion(self, messages, temperature, validator=None):
         params = {
-            "model": self.model,
+            "model": self.config.model,
             "max_tokens": 2048,
             "temperature": temperature,
             "messages": messages,
         }
 
-        for attempt in range(self.max_retries):
+        for attempt in range(self.config.max_retries):
             try:
                 response, gen_id = await self._make_request(params)
 
+                if not response:
+                    print(f"Empty response on attempt #{attempt + 1}: {gen_id}")
+                    continue
+
                 if validator and not await validator(response):
-                    print(
-                        f"Judging failed validation on attempt #{attempt + 1}: {gen_id}"
-                    )
+                    print(f"Validation failed on attempt #{attempt + 1}: {gen_id}")
                     continue
 
                 return response
 
-            except Exception as e:
-                print(f"Error on attempt {attempt + 1}: {str(e)}")
-                if attempt == self.max_retries - 1:
+            except httpx.HTTPError as e:
+                print(f"HTTP error on attempt {attempt + 1}: {str(e)}")
+                if attempt == self.config.max_retries - 1:
                     raise
 
         raise RuntimeError("Failed to get a valid response after max retries")

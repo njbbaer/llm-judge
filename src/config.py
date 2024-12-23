@@ -8,13 +8,14 @@ from .yaml_config import yaml
 
 @dataclass
 class Config:
-    model: str
-    iterations: int
     content_variants: List[str]
     content_prompt: str
     judge_prompt: str
     judge_categories: List[str]
-    warm_cache: bool
+    model: str = "anthropic/claude-3.5-haiku:beta"
+    warm_cache: bool = False
+    max_retries: int = 3
+    iterations: int = 1
 
     @classmethod
     async def load(cls, data) -> "Config":
@@ -25,15 +26,7 @@ class Config:
         base_path = os.path.dirname(os.path.abspath("./config/config.yml"))
         resolved_data = cls._resolve_vars(data, base_path)
 
-        return cls(
-            model=resolved_data["model"],
-            iterations=resolved_data["iterations"],
-            content_variants=resolved_data["content_variants"],
-            content_prompt=resolved_data["content_prompt"],
-            judge_prompt=resolved_data["judge_prompt"],
-            judge_categories=resolved_data["judge_categories"],
-            warm_cache=resolved_data.get("warm_cache", False),
-        )
+        return cls(**resolved_data)
 
     @staticmethod
     def _resolve_vars_recursive(obj, env):

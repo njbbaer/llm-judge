@@ -12,7 +12,7 @@ from src.config import Config
 
 async def main(data: Dict = None):
     config = await Config.load(data)
-    client = OpenRouterClient(config.model)
+    client = OpenRouterClient(config)
 
     with tqdm(total=config.total_calls, desc="Processing") as pbar:
         tasks = [
@@ -37,10 +37,8 @@ async def main(data: Dict = None):
 async def process_variant(
     client: OpenRouterClient, config: Config, variant: str, pbar: tqdm
 ) -> List[tuple]:
-    content = await generate_content(client, config.content_prompt, variant, pbar)
-    scores = await judge_content(
-        client, config.judge_prompt, content, variant, config.judge_categories, pbar
-    )
+    content = await generate_content(client, config, variant, pbar)
+    scores = await judge_content(client, config, content, variant, pbar)
     return scores
 
 
@@ -71,9 +69,9 @@ def build_messages(system_prompt: str, user_prompt: str) -> List[Dict[str, Any]]
 
 
 async def generate_content(
-    client: OpenRouterClient, system_prompt: str, user_prompt: str, pbar: tqdm
+    client: OpenRouterClient, config: Config, user_prompt: str, pbar: tqdm
 ) -> str:
-    messages = build_messages(system_prompt, user_prompt)
+    messages = build_messages(config.content_prompt, user_prompt)
     response_content = await client.request_chat_completion(messages, temperature=1.0)
     stripped_content = strip_tag(response_content, ["playwright", "think"])
     pbar.update(1)
@@ -89,17 +87,16 @@ def strip_tag(content: str, tags: List[str]) -> str:
 
 async def judge_content(
     client: OpenRouterClient,
-    judge_prompt: str,
+    config: Config,
     content: str,
     variant: str,
-    categories: List[str],
     pbar: tqdm,
 ) -> List[tuple]:
     async def validate_response(text: str) -> bool:
-        scores = await validate_and_extract_scores(text, categories)
+        scores = await validate_and_extract_scores(text, config.judge_categories)
         return scores is not None
 
-    messages = build_messages(judge_prompt, content)
+    messages = build_messages(config.judge_prompt, content)
     messages.insert(
         1, {"role": "assistant", "content": [{"type": "text", "text": variant}]}
     )
@@ -107,20 +104,22 @@ async def judge_content(
     response_content = await client.request_chat_completion(
         messages, temperature=0.0, validator=validate_response
     )
-    scores = await validate_and_extract_scores(response_content, categories)
+    scores = await validate_and_extract_scores(
+        response_content, config.judge_categories
+    )
     pbar.update(1)
     return scores
 
 
 async def validate_and_extract_scores(text: str, expected_categories: List[str]):
-    pattern = r"<(\w+)>(.*?)<score>(\d+)</score>\s*</\1>"
-    matches = re.findall(pattern, text, re.DOTALL)
+    pattern = r"(\w+)\s+score:\s*(\d+)"
+    matches = re.findall(pattern, text)
 
-    found_categories = {category for category, _, _ in matches}
+    found_categories = {category for category, score in matches}
     if found_categories != set(expected_categories):
         return None
 
-    return [(category, int(score)) for category, _, score in matches]
+    return [(category, int(score)) for category, score in matches]
 
 
 def group_scores_by_category(all_scores: List[List[tuple]]) -> Dict[str, List[int]]:

@@ -29,11 +29,19 @@ def mock_responses():
             "choices": [
                 {
                     "message": {
-                        "content": """
-                        <creativity>Strong imaginative elements<score>8</score></creativity>
-                        <coherence>Well structured<score>7</score></coherence>
-                        <impact>Memorable message<score>9</score></impact>
-                    """
+                        "content": (
+                            "# creativity\n"
+                            "Shows strong imagination.\n"
+                            "creativity score: 80\n"
+                            "---\n"
+                            "# coherence\n"
+                            "Clear structure.\n"
+                            "coherence score: 70\n"
+                            "---\n"
+                            "# impact\n"
+                            "Memorable message.\n"
+                            "impact score: 90"
+                        )
                     }
                 }
             ],
@@ -91,18 +99,8 @@ def assert_api_calls(mock_client):
 
 
 def assert_output(output_lines):
-    expected_scores = {
-        "creativity": "8.0 ± 0.0",
-        "coherence": "7.0 ± 0.0",
-        "impact": "9.0 ± 0.0",
-        "final": "8.0 ± 0.2",
-    }
-
-    for category, score in expected_scores.items():
-        line = [l for l in output_lines if score in l][0]
-        if category == "final":
-            assert f"Final Score: {score}" in line
-        else:
-            assert f"{category}: {score}" in line
-
+    assert "creativity: 80.0 ± 0.0" in output_lines
+    assert "coherence: 70.0 ± 0.0" in output_lines
+    assert "impact: 90.0 ± 0.0" in output_lines
+    assert "Final Score: 80.0 ± 2.5" in output_lines
     assert "Total Cost: $0.10" in output_lines
