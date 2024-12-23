@@ -12,6 +12,7 @@ tqdm = "*"
 pytest = "*"
 pytest-asyncio = "*"
 flake8-pyproject = "*"
+jinja2 = "*"
 
 [dev-packages]
 
@@ -21,3 +22,4 @@ python_version = "3.10"
 [scripts]
 test = "pytest"
 judge = "python judge.py"
+merge = "python merge_ctx.py"

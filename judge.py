@@ -4,33 +4,24 @@ import statistics
 import math
 from tqdm import tqdm
 from collections import defaultdict
+from typing import List, Dict, Any
 
-from src.yaml_config import yaml
 from src.api_client import OpenRouterClient
+from src.config import Config
 
 
-async def main(context=None):
-    if context is None:
-        context = await load_context()
+async def main(data: Dict = None):
+    config = await Config.load(data)
+    client = OpenRouterClient(config.model)
 
-    total_calls = context["iterations"] * len(context["content_variants"]) * 2
-    client = OpenRouterClient(context["model"])
-
-    with tqdm(total=total_calls, desc="Processing") as pbar:
+    with tqdm(total=config.total_calls, desc="Processing") as pbar:
         tasks = [
-            process_variant(
-                client,
-                context["content_prompt"],
-                context["judge_prompt"],
-                variant,
-                context["judge_categories"],
-                pbar,
-            )
-            for _ in range(context["iterations"])
-            for variant in context["content_variants"]
+            process_variant(client, config, variant, pbar)
+            for _ in range(config.iterations)
+            for variant in config.content_variants
         ]
 
-        if context["warm_cache"] and tasks:
+        if config.warm_cache and tasks:
             first_result = await tasks[0]
             remaining_results = await asyncio.gather(*tasks[1:])
             all_scores = [*remaining_results, first_result]
@@ -44,21 +35,16 @@ async def main(context=None):
 
 
 async def process_variant(
-    client, content_prompt, judge_prompt, variant, categories, pbar
-):
-    content = await generate_content(client, content_prompt, variant, pbar)
+    client: OpenRouterClient, config: Config, variant: str, pbar: tqdm
+) -> List[tuple]:
+    content = await generate_content(client, config.content_prompt, variant, pbar)
     scores = await judge_content(
-        client, judge_prompt, content, variant, categories, pbar
+        client, config.judge_prompt, content, variant, config.judge_categories, pbar
     )
     return scores
 
 
-async def load_context():
-    with open("./context.yml", "r") as f:
-        return yaml.load(f)
-
-
-def build_messages(system_prompt, user_prompt):
+def build_messages(system_prompt: str, user_prompt: str) -> List[Dict[str, Any]]:
     return [
         {
             "role": "system",
@@ -84,7 +70,9 @@ def build_messages(system_prompt, user_prompt):
     ]
 
 
-async def generate_content(client, system_prompt, user_prompt, pbar):
+async def generate_content(
+    client: OpenRouterClient, system_prompt: str, user_prompt: str, pbar: tqdm
+) -> str:
     messages = build_messages(system_prompt, user_prompt)
     response_content = await client.request_chat_completion(messages, temperature=1.0)
     stripped_content = strip_tag(response_content, ["playwright", "think"])
@@ -92,15 +80,22 @@ async def generate_content(client, system_prompt, user_prompt, pbar):
     return stripped_content
 
 
-def strip_tag(content, tags):
+def strip_tag(content: str, tags: List[str]) -> str:
     for tag in tags:
         content = re.sub(rf"<{tag}.*?>.*?</{tag}>", "", content, flags=re.DOTALL)
     content = re.sub(r"\n{3,}", "\n\n", content)
     return content.strip()
 
 
-async def judge_content(client, judge_prompt, content, variant, categories, pbar):
-    async def validate_response(text):
+async def judge_content(
+    client: OpenRouterClient,
+    judge_prompt: str,
+    content: str,
+    variant: str,
+    categories: List[str],
+    pbar: tqdm,
+) -> List[tuple]:
+    async def validate_response(text: str) -> bool:
         scores = await validate_and_extract_scores(text, categories)
         return scores is not None
 
@@ -117,7 +112,7 @@ async def judge_content(client, judge_prompt, content, variant, categories, pbar
     return scores
 
 
-async def validate_and_extract_scores(text, expected_categories):
+async def validate_and_extract_scores(text: str, expected_categories: List[str]):
     pattern = r"<(\w+)>(.*?)<score>(\d+)</score>\s*</\1>"
     matches = re.findall(pattern, text, re.DOTALL)
 
@@ -128,7 +123,7 @@ async def validate_and_extract_scores(text, expected_categories):
     return [(category, int(score)) for category, _, score in matches]
 
 
-def group_scores_by_category(all_scores):
+def group_scores_by_category(all_scores: List[List[tuple]]) -> Dict[str, List[int]]:
     category_scores = defaultdict(list)
     for attempt_scores in all_scores:
         for category, score in attempt_scores:
@@ -136,7 +131,7 @@ def group_scores_by_category(all_scores):
     return category_scores
 
 
-def calculate_category_stats(category_scores):
+def calculate_category_stats(category_scores: Dict[str, List[int]]):
     category_stats = {}
     all_scores_flat = []
 
@@ -148,7 +143,7 @@ def calculate_category_stats(category_scores):
     return category_stats, all_scores_flat
 
 
-def calculate_stats(scores):
+def calculate_stats(scores: List[int]) -> tuple[float, float]:
     mean = statistics.mean(scores)
     if len(scores) <= 1:
         return mean, 0
@@ -157,7 +152,7 @@ def calculate_stats(scores):
     return mean, sem
 
 
-def print_results(category_stats, all_scores_flat):
+def print_results(category_stats: Dict[str, tuple], all_scores_flat: List[int]):
     for category, (mean, sem) in sorted(category_stats.items()):
         print(f"{category}: {mean:.1f} ± {sem:.1f}")
 

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, Mock
 
 
 @pytest.fixture
@@ -53,16 +53,16 @@ async def test_pipeline(context, mock_responses, capsys):
     mock_client.__aenter__.return_value = mock_client
 
     mock_content = AsyncMock()
-    mock_content.json.return_value = content_response
-    mock_content.raise_for_status = AsyncMock()
+    mock_content.json = Mock(return_value=content_response)
+    mock_content.raise_for_status = Mock()
 
     mock_judge = AsyncMock()
-    mock_judge.json.return_value = judge_response
-    mock_judge.raise_for_status = AsyncMock()
+    mock_judge.json = Mock(return_value=judge_response)
+    mock_judge.raise_for_status = Mock()
 
     mock_details = AsyncMock()
-    mock_details.json.return_value = details_response
-    mock_details.raise_for_status = AsyncMock()
+    mock_details.json = Mock(return_value=details_response)
+    mock_details.raise_for_status = Mock()
 
     mock_client.post.side_effect = [mock_content, mock_judge] * 4
     mock_client.get.return_value = mock_details
