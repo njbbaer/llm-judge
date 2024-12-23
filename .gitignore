@@ -1,3 +1,5 @@
+.pytest_cache/
+
 config/
 ctx.md
 log.yml

@@ -32,41 +32,42 @@ class Config:
             content_prompt=resolved_data["content_prompt"],
             judge_prompt=resolved_data["judge_prompt"],
             judge_categories=resolved_data["judge_categories"],
-            warm_cache=resolved_data["warm_cache"],
+            warm_cache=resolved_data.get("warm_cache", False),
         )
 
     @staticmethod
-    def _resolve_vars(vars, base_path):
-        MAX_ITERATIONS = 10
-        for _ in range(MAX_ITERATIONS):
-            resolved_vars = Config._resolve_vars_recursive(vars, base_path, vars)
-            if resolved_vars == vars:
-                return resolved_vars
-            vars = resolved_vars
-        raise RuntimeError("Too many iterations resolving vars. Circular reference?")
+    def _resolve_vars_recursive(obj, env):
+        if isinstance(obj, dict):
+            return {k: Config._resolve_vars_recursive(v, env) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [Config._resolve_vars_recursive(i, env) for i in obj]
+        elif isinstance(obj, str):
+            template = env.from_string(str(obj))
+            return template.render()
+        return obj
 
     @staticmethod
-    def _resolve_vars_recursive(obj, base_path, context):
-        if isinstance(obj, dict):
-            return {
-                key: Config._resolve_vars_recursive(value, base_path, context)
-                for key, value in obj.items()
-            }
-        elif isinstance(obj, list):
-            return [
-                Config._resolve_vars_recursive(item, base_path, context) for item in obj
-            ]
-        elif isinstance(obj, str):
-            if obj.startswith("file:"):
-                file_path = obj.split("file:", 1)[1]
-                full_path = os.path.join(base_path, file_path)
-                with open(full_path) as file:
-                    return file.read()
-            return jinja2.Template(obj, trim_blocks=True, lstrip_blocks=True).render(
-                context
-            )
-        else:
-            return obj
+    def _resolve_vars(data, base_path):
+        MAX_ITERATIONS = 10
+        current = data
+
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(base_path), autoescape=False
+        )
+
+        def load_file(filename):
+            template = env.get_template(filename)
+            return template.render()
+
+        env.globals["load"] = load_file
+
+        for _ in range(MAX_ITERATIONS):
+            resolved = Config._resolve_vars_recursive(current, env)
+            if resolved == current:
+                return resolved
+            current = resolved
+
+        raise RuntimeError("Too many iterations resolving vars. Circular reference?")
 
     @property
     def total_calls(self) -> int:
