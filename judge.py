@@ -9,8 +9,10 @@ from src.yaml_config import yaml
 from src.api_client import OpenRouterClient
 
 
-async def main():
-    context = await load_context()
+async def main(context=None):
+    if context is None:
+        context = await load_context()
+
     total_calls = context["iterations"] * len(context["content_variants"]) * 2
     client = OpenRouterClient(context["model"])
 

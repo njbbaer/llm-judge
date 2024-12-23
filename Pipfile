@@ -9,8 +9,15 @@ requests = "*"
 httpx = "*"
 asyncio = "*"
 tqdm = "*"
+pytest = "*"
+pytest-asyncio = "*"
+flake8-pyproject = "*"
 
 [dev-packages]
 
 [requires]
 python_version = "3.10"
+
+[scripts]
+test = "pytest"
+judge = "python judge.py"

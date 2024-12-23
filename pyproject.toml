@@ -1,0 +1,12 @@
+# https://black.readthedocs.io/en/stable/the_black_code_style/current_style.html#flake8
+[tool.flake8]
+max-line-length = 80
+select = ["C", "E", "F", "W", "B", "B950"]
+extend-ignore = ["E203", "E501", "W503"]
+
+[tool.isort]
+profile = "black"
+
+# https://github.com/pytest-dev/pytest-asyncio/issues/924
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"

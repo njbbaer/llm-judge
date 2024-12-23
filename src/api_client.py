@@ -52,8 +52,8 @@ class OpenRouterClient:
                 headers=headers,
                 json=params,
             )
-            response.raise_for_status()
-            body = response.json()
+            await response.raise_for_status()
+            body = await response.json()
 
             if "error" in body:
                 raise Exception(body["error"])
@@ -76,8 +76,8 @@ class OpenRouterClient:
                     response = await client.get(
                         details_url, headers={"Authorization": f"Bearer {self.api_key}"}
                     )
-                    response.raise_for_status()
-                    return response.json()
+                    await response.raise_for_status()
+                    return await response.json()
             except httpx.HTTPError:
                 await asyncio.sleep(0.5)
 
